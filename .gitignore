@@ -1,0 +1,5 @@
+# SSH/telnet password for the live stick — never commit
+.ont-secret
+
+__pycache__/
+*.pyc
