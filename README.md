@@ -158,19 +158,4 @@ jobs:
 - The service runs as the unprivileged `lantiq-exporter` user and only ever
   reads from the stick.
 - The `/metrics` endpoint is unauthenticated but exposes only operational
-  telemetry (no credentials, no line identity). If the LAN is untrusted,
-  restrict the port to the monitoring host with a firewall rule:
-  ```sh
-  sudo iptables -A INPUT -p tcp --dport 9909 -s <monitoring-host-ip> -j ACCEPT
-  sudo iptables -A INPUT -p tcp --dport 9909 -j DROP
-  ```
-- SSH host-key checking is disabled (`StrictHostKeyChecking=no`,
-  `UserKnownHostsFile=/dev/null`) so the service survives the stick being
-  reflashed and regenerating its host key. On a directly-cabled management link
-  this is a deliberate trade; tighten it if the path is shared.
-
-## Other firmware / the GC1601 clone
-
-This targets the SSH-managed Falcon firmware. The sibling `gc1601-ont-clone`
-project has a telnet-managed Nokia clone (`gccli` / `gc_omcicli` on
-`192.168.101.1`); adding a telnet backend here would be a natural extension.
+  telemetry (no credentials, no line identity).
