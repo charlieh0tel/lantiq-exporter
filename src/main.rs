@@ -35,6 +35,11 @@ printf '@gtcsg ';  onu gtcsg  2>/dev/null
 printf '@gtcag ';  onu gtcag  2>/dev/null
 printf '@gtcrg ';  onu gtcrg  2>/dev/null
 printf '@gtctcg '; onu gtctcg 2>/dev/null
+printf '@uptime ';  cat /proc/uptime 2>/dev/null
+printf '@loadavg '; cat /proc/loadavg 2>/dev/null
+printf '@meminfo '; awk '/^(MemTotal|MemFree|Buffers|Cached):/{k=$1;sub(/:/,"",k);printf "%s=%s ",k,$2}' /proc/meminfo 2>/dev/null; echo
+df -k / /overlay /tmp 2>/dev/null | awk 'NR>1{print "@df " $6 " " $2 " " $4}'
+printf '@stat ';    awk '/^(processes|ctxt) /{printf "%s=%s ",$1,$2}' /proc/stat 2>/dev/null; echo
 "#;
 
 struct Config {
@@ -202,6 +207,20 @@ struct Snapshot {
     fec: Vec<(&'static str, i64)>,
     alarms: Vec<(String, i64)>,
     counters: Vec<(&'static str, i64)>,
+    // host OS health (from the stick's /proc + df)
+    uptime_s: Option<f64>,
+    load1: Option<f64>,
+    load5: Option<f64>,
+    load15: Option<f64>,
+    procs_running: Option<i64>,
+    procs_total: Option<i64>,
+    mem_total: Option<i64>,
+    mem_free: Option<i64>,
+    mem_buffers: Option<i64>,
+    mem_cached: Option<i64>,
+    fs: Vec<(String, i64, i64)>, // (mount, size_bytes, free_bytes)
+    forks_total: Option<i64>,
+    ctxt_total: Option<i64>,
     scrape_dur: Option<f64>,
     ts: Option<i64>,
 }
@@ -336,6 +355,49 @@ fn parse(stdout: &str) -> Snapshot {
                     s.counters.push((dst, v));
                 }
             }
+        } else if let Some(rest) = line.strip_prefix("@uptime") {
+            s.uptime_s = rest.split_whitespace().next().and_then(|v| v.parse().ok());
+        } else if let Some(rest) = line.strip_prefix("@loadavg") {
+            let f: Vec<&str> = rest.split_whitespace().collect();
+            if f.len() >= 3 {
+                s.load1 = f[0].parse().ok();
+                s.load5 = f[1].parse().ok();
+                s.load15 = f[2].parse().ok();
+            }
+            if let Some((r, t)) = f.get(3).and_then(|x| x.split_once('/')) {
+                s.procs_running = r.parse().ok();
+                s.procs_total = t.parse().ok();
+            }
+        } else if let Some(rest) = line.strip_prefix("@meminfo") {
+            for (k, v) in kv(rest) {
+                if let Ok(kb) = v.parse::<i64>() {
+                    let b = kb * 1024;
+                    match k.as_str() {
+                        "MemTotal" => s.mem_total = Some(b),
+                        "MemFree" => s.mem_free = Some(b),
+                        "Buffers" => s.mem_buffers = Some(b),
+                        "Cached" => s.mem_cached = Some(b),
+                        _ => {}
+                    }
+                }
+            }
+        } else if let Some(rest) = line.strip_prefix("@df") {
+            let f: Vec<&str> = rest.split_whitespace().collect();
+            if let (Some(mount), Some(sz), Some(fr)) = (f.first(), f.get(1), f.get(2)) {
+                if let (Ok(size_kb), Ok(free_kb)) = (sz.parse::<i64>(), fr.parse::<i64>()) {
+                    s.fs.push((mount.to_string(), size_kb * 1024, free_kb * 1024));
+                }
+            }
+        } else if let Some(rest) = line.strip_prefix("@stat") {
+            for (k, v) in kv(rest) {
+                if let Ok(n) = v.parse::<i64>() {
+                    match k.as_str() {
+                        "processes" => s.forks_total = Some(n),
+                        "ctxt" => s.ctxt_total = Some(n),
+                        _ => {}
+                    }
+                }
+            }
         }
     }
     s
@@ -436,6 +498,62 @@ fn render(s: &Snapshot) -> String {
         let full = format!("ont_{}", name);
         o.push_str(&format!("# TYPE {} counter\n", full));
         o.push_str(&format!("{} {}\n", full, v));
+    }
+
+    // --- host OS health (the stick's own Linux) ---
+    if let Some(v) = s.uptime_s {
+        g!("ont_host_uptime_seconds", "ONT host uptime", v);
+    }
+    if let Some(v) = s.load1 {
+        g!("ont_host_load1", "1-minute load average", v);
+    }
+    if let Some(v) = s.load5 {
+        g!("ont_host_load5", "5-minute load average", v);
+    }
+    if let Some(v) = s.load15 {
+        g!("ont_host_load15", "15-minute load average", v);
+    }
+    if let Some(v) = s.procs_running {
+        gi!("ont_host_procs_running", "Runnable processes", v);
+    }
+    if let Some(v) = s.procs_total {
+        gi!("ont_host_procs_total", "Total processes/threads", v);
+    }
+    if let Some(v) = s.mem_total {
+        gi!("ont_host_memory_total_bytes", "Total RAM", v);
+    }
+    if let Some(v) = s.mem_free {
+        gi!("ont_host_memory_free_bytes", "Free RAM", v);
+    }
+    if let Some(v) = s.mem_buffers {
+        gi!("ont_host_memory_buffers_bytes", "Buffer memory", v);
+    }
+    if let Some(v) = s.mem_cached {
+        gi!("ont_host_memory_cached_bytes", "Page cache", v);
+    }
+    if !s.fs.is_empty() {
+        o.push_str("# HELP ont_host_filesystem_size_bytes Filesystem size\n");
+        o.push_str("# TYPE ont_host_filesystem_size_bytes gauge\n");
+        o.push_str("# HELP ont_host_filesystem_free_bytes Filesystem free space\n");
+        o.push_str("# TYPE ont_host_filesystem_free_bytes gauge\n");
+        for (mount, size, free) in &s.fs {
+            o.push_str(&format!(
+                "ont_host_filesystem_size_bytes{{mount=\"{}\"}} {}\n",
+                mount, size
+            ));
+            o.push_str(&format!(
+                "ont_host_filesystem_free_bytes{{mount=\"{}\"}} {}\n",
+                mount, free
+            ));
+        }
+    }
+    if let Some(v) = s.forks_total {
+        o.push_str("# TYPE ont_host_forks_total counter\n");
+        o.push_str(&format!("ont_host_forks_total {}\n", v));
+    }
+    if let Some(v) = s.ctxt_total {
+        o.push_str("# TYPE ont_host_context_switches_total counter\n");
+        o.push_str(&format!("ont_host_context_switches_total {}\n", v));
     }
 
     if let Some(v) = s.scrape_dur {

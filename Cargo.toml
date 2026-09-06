@@ -1,6 +1,6 @@
 [package]
 name = "lantiq-exporter"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 description = "Prometheus exporter for a Lantiq/Falcon GPON ONT-on-a-stick"
 license = "MIT"

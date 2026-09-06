@@ -146,6 +146,12 @@ jobs:
 | `ont_allocations_total`, `ont_allocations_lost_total` | counter | upstream bandwidth allocations |
 | `ont_rx_gem_frames_dropped_total`, `ont_drop_total`, `ont_omci_drop_total`, `ont_rx_oversized_frames_total` | counter | drops |
 | `ont_scrape_duration_seconds`, `ont_last_scrape_timestamp_seconds` | gauge | poll health |
+| `ont_host_uptime_seconds` | gauge | stick uptime (drops = reboot) |
+| `ont_host_load1` / `load5` / `load15` | gauge | load averages |
+| `ont_host_procs_running`, `ont_host_procs_total` | gauge | process counts |
+| `ont_host_memory_{total,free,buffers,cached}_bytes` | gauge | RAM (avail ≈ free+buffers+cached) |
+| `ont_host_filesystem_{size,free}_bytes{mount}` | gauge | fs space — watch `/overlay` (jffs2 flash) |
+| `ont_host_forks_total`, `ont_host_context_switches_total` | counter | scheduler activity |
 
 ### The most useful things to alert on
 - `ont_rx_power_dbm` drifting toward the module's low threshold (fiber/OLT budget).
