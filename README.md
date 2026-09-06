@@ -17,8 +17,8 @@ temperature, PON state, and GEM/error counters over time.
 The scrape is decoupled from the SSH poll, so hammering `/metrics` never
 hammers the little mips box.
 
-- **Single static aarch64 binary, ~390 KB, no runtime deps** beyond libc and the
-  system `ssh` client. Written in pure Rust `std` — zero external crates.
+- **Single static aarch64 binary, ~390 KB, minimal runtime deps** beyond libc, the
+  system `ssh` client, and `sshpass` (password auth only). Pure Rust `std` — zero crates.
 - Everything it runs on the stick is **read-only** (a `dd` of the SFP A2h DDM
   image and `onu gtc*` getters). No `fw_setenv`, no reboot, no writes — safe to
   run against a stick carrying a live WAN.
@@ -70,7 +70,7 @@ sudo systemctl restart lantiq-exporter
 
 **Password (fallback):** set `ONT_PASS=...` in the config, or point
 `ONT_PASSWORD_FILE=` at a `chmod 600` file. The exporter feeds it to `ssh` via
-OpenSSH's `SSH_ASKPASS` mechanism.
+`sshpass` (a package dependency).
 
 Check it:
 

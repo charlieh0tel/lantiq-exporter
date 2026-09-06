@@ -1,6 +1,6 @@
 [package]
 name = "lantiq-exporter"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 description = "Prometheus exporter for a Lantiq/Falcon GPON ONT-on-a-stick"
 license = "MIT"
@@ -24,7 +24,7 @@ maintainer = "Christopher Hoover <ch@murgatroid.com>"
 copyright = "2026, Christopher Hoover"
 section = "net"
 priority = "optional"
-depends = "$auto, openssh-client, util-linux, adduser"
+depends = "$auto, openssh-client, sshpass, adduser"
 extended-description = """\
 Reads optical levels, PON/GTC state and GEM counters read-only over SSH from a \
 Lantiq (Falcon) GPON ONT-on-a-stick (FS.com GPON-ONU-34-20BI / Nokia G-010G-A \

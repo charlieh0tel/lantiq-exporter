@@ -8,7 +8,7 @@
 //
 // Pure std — no external crates. SSH is done by shelling out to the system
 // `ssh` client: with an SSH key (recommended for the service) it just works;
-// with a password it uses OpenSSH's SSH_ASKPASS mechanism.
+// with a password it uses sshpass (a runtime dependency).
 //
 //   lantiq-exporter --once
 //   lantiq-exporter --serve --addr 0.0.0.0 --port 9909 --interval 30
@@ -21,7 +21,6 @@
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::os::unix::fs::PermissionsExt;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -150,30 +149,16 @@ fn ssh_run(cfg: &Config, password: &Option<String>) -> Result<String, String> {
         "-o", "NumberOfPasswordPrompts=1",
     ];
 
-    let mut askpass_path: Option<String> = None;
     let mut cmd = if let Some(pw) = password {
-        // Password auth via OpenSSH SSH_ASKPASS. Write a throwaway helper that
-        // echoes the password from an env var, then force ssh to use it.
-        let path = format!(
-            "{}/lantiq-askpass-{}.sh",
-            std::env::temp_dir().display(),
-            std::process::id()
-        );
-        std::fs::write(&path, "#!/bin/sh\nprintf '%s\\n' \"$ONT_ASKPASS_VALUE\"\n")
-            .map_err(|e| format!("askpass write: {}", e))?;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700))
-            .map_err(|e| format!("askpass chmod: {}", e))?;
-        askpass_path = Some(path.clone());
-
-        let mut c = Command::new("setsid");
-        c.arg("-w").arg("ssh");
+        // Password auth via sshpass: -e reads the password from the SSHPASS
+        // env var, so it never appears in the process argv.
+        let mut c = Command::new("sshpass");
+        c.arg("-e").arg("ssh");
         c.args(ssh_opts);
         c.arg("-o").arg("PreferredAuthentications=password,keyboard-interactive");
+        c.arg("-o").arg("PubkeyAuthentication=no");
         c.arg(&target).arg(REMOTE_SCRIPT);
-        c.env("ONT_ASKPASS_VALUE", pw);
-        c.env("SSH_ASKPASS", &path);
-        c.env("SSH_ASKPASS_REQUIRE", "force");
-        c.env_remove("DISPLAY");
+        c.env("SSHPASS", pw);
         c
     } else {
         // Key auth: no prompts.
@@ -184,11 +169,7 @@ fn ssh_run(cfg: &Config, password: &Option<String>) -> Result<String, String> {
         c
     };
 
-    let out = cmd.output();
-    if let Some(p) = askpass_path {
-        let _ = std::fs::remove_file(p);
-    }
-    let out = out.map_err(|e| format!("spawn ssh: {}", e))?;
+    let out = cmd.output().map_err(|e| format!("spawn ssh: {}", e))?;
     if !out.status.success() {
         let err = String::from_utf8_lossy(&out.stderr);
         return Err(format!(
