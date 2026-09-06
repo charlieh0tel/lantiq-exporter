@@ -39,7 +39,7 @@ $EDITOR .ont-secret        # one line: the stick's SSH password
 ./ont_exporter.py --once
 
 # run the server (polls every 30s, serves cached /metrics on :9909)
-./ont_exporter.py --serve --addr 127.0.0.1 --port 9909 --interval 30
+./ont_exporter.py --serve --addr 0.0.0.0 --port 9909 --interval 30
 ```
 
 Config precedence is flag > env > default:
@@ -62,29 +62,38 @@ sudo cp deploy/lantiq-exporter.service /etc/systemd/system/
 # edit User / WorkingDirectory / ExecStart paths to match your checkout
 sudo systemctl daemon-reload
 sudo systemctl enable --now lantiq-exporter
-curl -s http://127.0.0.1:9909/metrics | head
+curl -s http://10.0.1.53:9909/metrics | head    # this box (rpi-cm5-01) on the LAN
 ```
 
-## Wire into Netdata
+## Scrape it from your monitoring host
 
-Netdata's `go.d/prometheus` collector auto-charts every `ont_*` series.
+This box (`rpi-cm5-01`) serves `/metrics` on the LAN at **`10.0.1.53:9909`**.
+Nothing runs Prometheus or Netdata here — point whatever does, elsewhere on the
+network, at that address. The exporter serves cached values, so scraping it
+often does not add SSH load on the stick.
 
-```sh
-sudo cp deploy/netdata-go.d-prometheus.conf /etc/netdata/go.d/prometheus.conf
-# or, the netdata-managed way:
-#   cd /etc/netdata && sudo ./edit-config go.d/prometheus.conf
-sudo systemctl restart netdata
-```
-
-Then look under **Prometheus → lantiq_ont** in the Netdata dashboard.
-
-## Wire into Prometheus
+**Prometheus** (on the monitoring host):
 
 ```yaml
 scrape_configs:
   - job_name: lantiq_ont
     static_configs:
-      - targets: ['127.0.0.1:9909']
+      - targets: ['10.0.1.53:9909']
+```
+
+**Netdata** (`go.d/prometheus` on the monitoring host — auto-charts every
+`ont_*` series):
+
+```yaml
+jobs:
+  - name: lantiq_ont
+    url: http://10.0.1.53:9909/metrics
+```
+
+Quick reachability check from the monitoring host:
+
+```sh
+curl -s http://10.0.1.53:9909/metrics | grep -E '^ont_(up|rx_power_dbm|gpon_o5) '
 ```
 
 ## Metrics
@@ -120,8 +129,16 @@ scrape_configs:
 ## Security note
 
 `.ont-secret` holds a device password and is gitignored. The exporter only ever
-reads from the stick. Bind the HTTP server to `127.0.0.1` (as the systemd unit
-does) unless you intend to expose it.
+reads from the stick. The systemd unit binds `0.0.0.0:9909` so a remote
+scraper on the LAN can reach it. The endpoint is unauthenticated and exposes
+only operational telemetry (no credentials, no line identity) — but if the LAN
+is untrusted, restrict the port with a firewall rule allowing only the
+monitoring host, e.g.:
+
+```sh
+sudo iptables -A INPUT -p tcp --dport 9909 -s <monitoring-host-ip> -j ACCEPT
+sudo iptables -A INPUT -p tcp --dport 9909 -j DROP
+```
 
 ## Other firmware / the GC1601 clone
 

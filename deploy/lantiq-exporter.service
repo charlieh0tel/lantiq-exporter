@@ -9,7 +9,7 @@ Type=simple
 User=ch
 WorkingDirectory=/home/ch/src/lantiq-exporter
 ExecStart=/usr/bin/python3 /home/ch/src/lantiq-exporter/ont_exporter.py \
-  --serve --addr 127.0.0.1 --port 9909 --interval 30
+  --serve --addr 0.0.0.0 --port 9909 --interval 30
 Restart=on-failure
 RestartSec=5
 # Hardening (the exporter only needs to read its own dir + reach the stick over SSH)
