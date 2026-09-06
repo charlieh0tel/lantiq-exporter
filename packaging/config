@@ -1,0 +1,18 @@
+# lantiq-exporter configuration — sourced by systemd (EnvironmentFile).
+# KEY=VALUE, no quotes, no `export`.
+
+ONT_HOST=192.168.1.10
+ONT_USER=ONTUSER
+
+# --- Authentication: choose ONE ------------------------------------------
+# Recommended: SSH key. Leave the password vars unset and install a key for
+# the 'lantiq-exporter' user:
+#   sudo -u lantiq-exporter ssh-keygen -t ed25519 -N '' -f /var/lib/lantiq-exporter/.ssh/id_ed25519
+#   sudo -u lantiq-exporter ssh-copy-id ONTUSER@192.168.1.10
+#
+# Quick alternative: a password (uncomment ONE).
+#ONT_PASS=changeme
+#ONT_PASSWORD_FILE=/etc/lantiq-exporter/secret
+
+# --- HTTP + polling ------------------------------------------------------
+LANTIQ_EXPORTER_ARGS=--serve --addr 0.0.0.0 --port 9909 --interval 30

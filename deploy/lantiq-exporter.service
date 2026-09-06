@@ -1,22 +1,26 @@
 [Unit]
 Description=Lantiq/Falcon GPON ONT Prometheus exporter
+Documentation=file:/usr/share/doc/lantiq-exporter/README.md
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-# Adjust User and WorkingDirectory to wherever you cloned this.
-User=ch
-WorkingDirectory=/home/ch/src/lantiq-exporter
-ExecStart=/usr/bin/python3 /home/ch/src/lantiq-exporter/ont_exporter.py \
-  --serve --addr 0.0.0.0 --port 9909 --interval 30
+User=lantiq-exporter
+Group=lantiq-exporter
+EnvironmentFile=/etc/lantiq-exporter/config
+ExecStart=/usr/bin/lantiq-exporter $LANTIQ_EXPORTER_ARGS
 Restart=on-failure
 RestartSec=5
-# Hardening (the exporter only needs to read its own dir + reach the stick over SSH)
+
+# Hardening: it only needs to read its own state dir and reach the stick via ssh.
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=/tmp
+ProtectHome=true
 PrivateTmp=true
+StateDirectory=lantiq-exporter
+# ssh key + known_hosts live in the service user's home:
+Environment=HOME=/var/lib/lantiq-exporter
 
 [Install]
 WantedBy=multi-user.target

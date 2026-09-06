@@ -1,0 +1,10 @@
+#!/bin/sh
+set -e
+if [ "$1" = configure ]; then
+  if ! getent passwd lantiq-exporter >/dev/null; then
+    adduser --system --group --home /var/lib/lantiq-exporter \
+            --no-create-home --quiet lantiq-exporter || true
+  fi
+fi
+#DEBHELPER#
+exit 0

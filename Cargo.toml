@@ -1,0 +1,45 @@
+[package]
+name = "lantiq-exporter"
+version = "0.1.0"
+edition = "2021"
+description = "Prometheus exporter for a Lantiq/Falcon GPON ONT-on-a-stick"
+license = "MIT"
+repository = "local"
+
+[[bin]]
+name = "lantiq-exporter"
+path = "src/main.rs"
+
+# Small, self-contained release binary. No external crates — std only.
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+# --- .deb packaging (cargo-deb) ------------------------------------------
+[package.metadata.deb]
+maintainer = "Christopher Hoover <ch@murgatroid.com>"
+copyright = "2026, Christopher Hoover"
+section = "net"
+priority = "optional"
+depends = "$auto, openssh-client, util-linux, adduser"
+extended-description = """\
+Reads optical levels, PON/GTC state and GEM counters read-only over SSH from a \
+Lantiq (Falcon) GPON ONT-on-a-stick (FS.com GPON-ONU-34-20BI / Nokia G-010G-A \
+class) and serves them at /metrics for a remote Prometheus or Netdata to \
+scrape. No agent runs on the ONT."""
+assets = [
+    ["target/release/lantiq-exporter", "usr/bin/", "755"],
+    ["packaging/config", "etc/lantiq-exporter/config", "644"],
+    ["README.md", "usr/share/doc/lantiq-exporter/README.md", "644"],
+]
+conf-files = ["/etc/lantiq-exporter/config"]
+maintainer-scripts = "packaging"
+
+[package.metadata.deb.systemd-units]
+unit-scripts = "deploy"
+unit-name = "lantiq-exporter"
+enable = true
+start = true

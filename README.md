@@ -1,45 +1,92 @@
-# Lantiq/Falcon GPON ONT exporter
+# lantiq-exporter
 
-A dependency-free Prometheus/OpenMetrics exporter for a **Lantiq (Falcon) GPON
+A tiny Prometheus/OpenMetrics exporter for a **Lantiq (Falcon) GPON
 ONT-on-a-stick** — the FS.com `GPON-ONU-34-20BI` / Nokia `G-010G-A` class module
 running the OpenWrt/Lantiq 7.5.x firmware.
 
-It runs on a nearby host (a Raspberry Pi, a server — anything with Python 3 and
-SSH), reaches the stick **read-only** over SSH on its own interval, caches the
-values, and serves them at `/metrics`. Point Netdata (or Prometheus) at that
-endpoint to trend optical power, temperature, PON state, and GEM/error counters
-over time.
+It runs on a nearby host, reaches the stick **read-only** over SSH on its own
+interval, caches the values, and serves them at `/metrics`. A remote
+Prometheus or Netdata scrapes that endpoint and trends optical power,
+temperature, PON state, and GEM/error counters over time.
 
 ```
-  Netdata / Prometheus  ──scrape──▶  ont_exporter.py  ──ssh (read-only)──▶  ONT @ 192.168.1.10
-       (every 1s)          /metrics   (polls every 30s, caches)              gtc* getters + A2h DDM
+  Prometheus / Netdata  --scrape-->  lantiq-exporter  --ssh (read-only)-->  ONT @ 192.168.1.10
+   (elsewhere on LAN)      /metrics   (polls every 30s, caches)             gtc* getters + A2h DDM
 ```
 
-The scrape rate is decoupled from the SSH poll, so hammering `/metrics` never
+The scrape is decoupled from the SSH poll, so hammering `/metrics` never
 hammers the little mips box.
+
+- **Single static aarch64 binary, ~390 KB, no runtime deps** beyond libc and the
+  system `ssh` client. Written in pure Rust `std` — zero external crates.
+- Everything it runs on the stick is **read-only** (a `dd` of the SFP A2h DDM
+  image and `onu gtc*` getters). No `fw_setenv`, no reboot, no writes — safe to
+  run against a stick carrying a live WAN.
 
 ## Why these numbers
 
-Optics are read from the module's **SFF-8472 A2h real-time diagnostics** (bytes
-96–105 of `/dev/sfp_eeprom1`), which are internally calibrated. The decoded TX/RX
-optical power match the ONT's own OMCI ANI-G readings exactly, which is the
-cross-check that the temperature and Vcc from the same page are trustworthy. PON
-state, alarms, and counters come from the Falcon `onu gtc*` getters. Nothing is
-written to the stick — no `fw_setenv`, no reboot, no `onu` writes — so it is safe
-to run against a stick that is carrying a live WAN.
+Optics come from the module's **SFF-8472 A2h real-time diagnostics** (bytes
+96-105 of `/dev/sfp_eeprom1`), which are internally calibrated. The decoded
+TX/RX optical power match the ONT's own OMCI ANI-G readings exactly - the
+cross-check that the temperature and Vcc from the same page are trustworthy.
+PON state, alarms, and counters come from the Falcon `onu gtc*` getters.
 
-## Setup
+## Build
 
 ```sh
-cp .ont-secret.example .ont-secret
-chmod 600 .ont-secret
-$EDITOR .ont-secret        # one line: the stick's SSH password
+cargo build --release          # target/release/lantiq-exporter
+```
 
-# smoke test — prints metrics once
-./ont_exporter.py --once
+Build the Debian package (needs `cargo-deb`: `cargo install cargo-deb`):
 
-# run the server (polls every 30s, serves cached /metrics on :9909)
-./ont_exporter.py --serve --addr 0.0.0.0 --port 9909 --interval 30
+```sh
+cargo deb                      # target/debian/lantiq-exporter_<ver>_<arch>.deb
+```
+
+## Install
+
+```sh
+sudo apt install ./target/debian/lantiq-exporter_*.deb
+```
+
+The package creates a system user `lantiq-exporter`, installs the systemd unit,
+drops a config file at `/etc/lantiq-exporter/config`, and enables + starts the
+service (bound to `0.0.0.0:9909`). It reports `ont_up 0` until you configure
+authentication (below) and `systemctl restart lantiq-exporter`.
+
+## Configure
+
+Edit `/etc/lantiq-exporter/config` - `ONT_HOST`, `ONT_USER`, and the poll/serve
+args. Then pick one auth method:
+
+**SSH key (recommended for the service):**
+
+```sh
+sudo -u lantiq-exporter ssh-keygen -t ed25519 -N '' \
+    -f /var/lib/lantiq-exporter/.ssh/id_ed25519
+sudo -u lantiq-exporter ssh-copy-id ONTUSER@192.168.1.10
+sudo systemctl restart lantiq-exporter
+```
+
+**Password (fallback):** set `ONT_PASS=...` in the config, or point
+`ONT_PASSWORD_FILE=` at a `chmod 600` file. The exporter feeds it to `ssh` via
+OpenSSH's `SSH_ASKPASS` mechanism.
+
+Check it:
+
+```sh
+systemctl status lantiq-exporter
+curl -s http://127.0.0.1:9909/metrics | grep -E '^ont_(up|rx_power_dbm|gpon_o5) '
+```
+
+## Run without installing
+
+```sh
+# one-shot: print metrics once (for testing)
+./target/release/lantiq-exporter --once --password-file ./.ont-secret
+
+# serve (polls every 30s, serves cached /metrics on :9909)
+./target/release/lantiq-exporter --serve --addr 0.0.0.0 --port 9909 --interval 30
 ```
 
 Config precedence is flag > env > default:
@@ -48,31 +95,18 @@ Config precedence is flag > env > default:
 |---|---|---|
 | `--host` | `ONT_HOST` | `192.168.1.10` |
 | `--user` | `ONT_USER` | `ONTUSER` |
-| `--password-file` | `ONT_PASSWORD_FILE` | `./.ont-secret` |
-| — | `ONT_PASS` | (inline password, overrides the file) |
-
-Auth uses OpenSSH's built-in `SSH_ASKPASS` mechanism, so no `sshpass`, `expect`,
-or `paramiko` is required. If you prefer key auth, drop a public key in the
-stick's `~/.ssh/authorized_keys` and the password file becomes unused.
-
-## Run it as a service
-
-```sh
-sudo cp deploy/lantiq-exporter.service /etc/systemd/system/
-# edit User / WorkingDirectory / ExecStart paths to match your checkout
-sudo systemctl daemon-reload
-sudo systemctl enable --now lantiq-exporter
-curl -s http://10.0.1.53:9909/metrics | head    # this box (rpi-cm5-01) on the LAN
-```
+| `--password-file` | `ONT_PASSWORD_FILE` | (unset -> SSH key auth) |
+| - | `ONT_PASS` | (inline password, overrides the file) |
+| `--addr` / `--port` / `--interval` | - | `0.0.0.0` / `9909` / `30` |
 
 ## Scrape it from your monitoring host
 
 This box (`rpi-cm5-01`) serves `/metrics` on the LAN at **`10.0.1.53:9909`**.
-Nothing runs Prometheus or Netdata here — point whatever does, elsewhere on the
+Nothing runs Prometheus or Netdata here - point whatever does, elsewhere on the
 network, at that address. The exporter serves cached values, so scraping it
 often does not add SSH load on the stick.
 
-**Prometheus** (on the monitoring host):
+**Prometheus:**
 
 ```yaml
 scrape_configs:
@@ -81,19 +115,12 @@ scrape_configs:
       - targets: ['10.0.1.53:9909']
 ```
 
-**Netdata** (`go.d/prometheus` on the monitoring host — auto-charts every
-`ont_*` series):
+**Netdata** (`go.d/prometheus` - auto-charts every `ont_*` series):
 
 ```yaml
 jobs:
   - name: lantiq_ont
     url: http://10.0.1.53:9909/metrics
-```
-
-Quick reachability check from the monitoring host:
-
-```sh
-curl -s http://10.0.1.53:9909/metrics | grep -E '^ont_(up|rx_power_dbm|gpon_o5) '
 ```
 
 ## Metrics
@@ -113,7 +140,7 @@ curl -s http://10.0.1.53:9909/metrics | grep -E '^ont_(up|rx_power_dbm|gpon_o5) 
 | `ont_fec_enabled{direction}` | gauge | FEC on/off per direction |
 | `ont_alarm{name}` | gauge | one series per GTC alarm bit (1 = active) |
 | `ont_tx_gem_frames_total`, `ont_rx_gem_frames_total` | counter | GEM frame counts |
-| `ont_tx_gem_bytes_total` | counter | **32-bit, wraps** — use `rate()` (handles the wrap as a reset) |
+| `ont_tx_gem_bytes_total` | counter | **32-bit, wraps** - use `rate()` (handles the wrap as a reset) |
 | `ont_hec_errors_{corrected,uncorrected}_total`, `ont_bip_errors_total` | counter | line error counters |
 | `ont_fec_words_*_total`, `ont_fec_seconds_total` | counter | FEC stats (0 while FEC disabled) |
 | `ont_allocations_total`, `ont_allocations_lost_total` | counter | upstream bandwidth allocations |
@@ -122,26 +149,28 @@ curl -s http://10.0.1.53:9909/metrics | grep -E '^ont_(up|rx_power_dbm|gpon_o5) 
 
 ### The most useful things to alert on
 - `ont_rx_power_dbm` drifting toward the module's low threshold (fiber/OLT budget).
-- `ont_temperature_celsius` — these sticks run hot (~69 °C is normal); warn ~85 °C.
-- `ont_gpon_o5 == 0` — the ONT dropped out of the operational state.
-- `rate(ont_hec_errors_uncorrected_total[5m]) > 0` — line integrity.
+- `ont_temperature_celsius` - these sticks run hot (~69 C is normal); warn ~85 C.
+- `ont_gpon_o5 == 0` - the ONT dropped out of the operational state.
+- `rate(ont_hec_errors_uncorrected_total[5m]) > 0` - line integrity.
 
-## Security note
+## Security notes
 
-`.ont-secret` holds a device password and is gitignored. The exporter only ever
-reads from the stick. The systemd unit binds `0.0.0.0:9909` so a remote
-scraper on the LAN can reach it. The endpoint is unauthenticated and exposes
-only operational telemetry (no credentials, no line identity) — but if the LAN
-is untrusted, restrict the port with a firewall rule allowing only the
-monitoring host, e.g.:
-
-```sh
-sudo iptables -A INPUT -p tcp --dport 9909 -s <monitoring-host-ip> -j ACCEPT
-sudo iptables -A INPUT -p tcp --dport 9909 -j DROP
-```
+- The service runs as the unprivileged `lantiq-exporter` user and only ever
+  reads from the stick.
+- The `/metrics` endpoint is unauthenticated but exposes only operational
+  telemetry (no credentials, no line identity). If the LAN is untrusted,
+  restrict the port to the monitoring host with a firewall rule:
+  ```sh
+  sudo iptables -A INPUT -p tcp --dport 9909 -s <monitoring-host-ip> -j ACCEPT
+  sudo iptables -A INPUT -p tcp --dport 9909 -j DROP
+  ```
+- SSH host-key checking is disabled (`StrictHostKeyChecking=no`,
+  `UserKnownHostsFile=/dev/null`) so the service survives the stick being
+  reflashed and regenerating its host key. On a directly-cabled management link
+  this is a deliberate trade; tighten it if the path is shared.
 
 ## Other firmware / the GC1601 clone
 
 This targets the SSH-managed Falcon firmware. The sibling `gc1601-ont-clone`
-project also has a telnet-managed Nokia clone (`gccli` / `gc_omcicli` on
+project has a telnet-managed Nokia clone (`gccli` / `gc_omcicli` on
 `192.168.101.1`); adding a telnet backend here would be a natural extension.
