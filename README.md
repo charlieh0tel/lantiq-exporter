@@ -115,13 +115,18 @@ scrape_configs:
       - targets: ['<exporter-host>:9909']
 ```
 
-**Netdata** (`go.d/prometheus` - auto-charts every `ont_*` series):
+**Netdata** — edit `go.d/prometheus.conf` (`sudo /etc/netdata/edit-config
+go.d/prometheus.conf`) and add a job; the `prometheus` collector auto-charts
+every `ont_*` series. If a `jobs:` block already exists, add this item under it
+rather than starting a second `jobs:` key.
 
 ```yaml
 jobs:
   - name: lantiq_ont
     url: http://<exporter-host>:9909/metrics
 ```
+
+Then `sudo systemctl restart netdata`.
 
 ## Metrics
 
