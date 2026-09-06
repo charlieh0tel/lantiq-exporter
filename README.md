@@ -101,7 +101,7 @@ Config precedence is flag > env > default:
 
 ## Scrape it from your monitoring host
 
-This box (`rpi-cm5-01`) serves `/metrics` on the LAN at **`10.0.1.53:9909`**.
+The exporter host serves `/metrics` on the LAN at **`<exporter-host>:9909`**.
 Nothing runs Prometheus or Netdata here - point whatever does, elsewhere on the
 network, at that address. The exporter serves cached values, so scraping it
 often does not add SSH load on the stick.
@@ -112,7 +112,7 @@ often does not add SSH load on the stick.
 scrape_configs:
   - job_name: lantiq_ont
     static_configs:
-      - targets: ['10.0.1.53:9909']
+      - targets: ['<exporter-host>:9909']
 ```
 
 **Netdata** (`go.d/prometheus` - auto-charts every `ont_*` series):
@@ -120,7 +120,7 @@ scrape_configs:
 ```yaml
 jobs:
   - name: lantiq_ont
-    url: http://10.0.1.53:9909/metrics
+    url: http://<exporter-host>:9909/metrics
 ```
 
 ## Metrics
