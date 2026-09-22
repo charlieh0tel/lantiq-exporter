@@ -148,10 +148,14 @@ fn load_password(cfg: &Config) -> Option<String> {
 fn ssh_run(cfg: &Config, password: &Option<String>) -> Result<String, String> {
     let target = format!("{}@{}", cfg.user, cfg.host);
     let ssh_opts = [
-        "-o", "StrictHostKeyChecking=no",
-        "-o", "UserKnownHostsFile=/dev/null",
-        "-o", "ConnectTimeout=10",
-        "-o", "NumberOfPasswordPrompts=1",
+        "-o",
+        "StrictHostKeyChecking=no",
+        "-o",
+        "UserKnownHostsFile=/dev/null",
+        "-o",
+        "ConnectTimeout=10",
+        "-o",
+        "NumberOfPasswordPrompts=1",
     ];
 
     let mut cmd = if let Some(pw) = password {
@@ -160,7 +164,8 @@ fn ssh_run(cfg: &Config, password: &Option<String>) -> Result<String, String> {
         let mut c = Command::new("sshpass");
         c.arg("-e").arg("ssh");
         c.args(ssh_opts);
-        c.arg("-o").arg("PreferredAuthentications=password,keyboard-interactive");
+        c.arg("-o")
+            .arg("PreferredAuthentications=password,keyboard-interactive");
         c.arg("-o").arg("PubkeyAuthentication=no");
         c.arg(&target).arg(REMOTE_SCRIPT);
         c.env("SSHPASS", pw);
@@ -436,13 +441,25 @@ fn render(s: &Snapshot) -> String {
         }};
     }
 
-    gi!("ont_up", "1 if the last poll of the ONT succeeded, else 0", s.up);
+    gi!(
+        "ont_up",
+        "1 if the last poll of the ONT succeeded, else 0",
+        s.up
+    );
 
     if let Some(v) = s.temp_c {
-        g!("ont_temperature_celsius", "Module/BOSA temperature (SFF-8472 A2h)", v);
+        g!(
+            "ont_temperature_celsius",
+            "Module/BOSA temperature (SFF-8472 A2h)",
+            v
+        );
     }
     if let Some(v) = s.vcc {
-        g!("ont_voltage_volts", "Module supply voltage Vcc (SFF-8472 A2h)", v);
+        g!(
+            "ont_voltage_volts",
+            "Module supply voltage Vcc (SFF-8472 A2h)",
+            v
+        );
     }
     if let Some(v) = s.tx_bias_a {
         g!("ont_tx_bias_amperes", "Laser TX bias current", v);
@@ -454,28 +471,56 @@ fn render(s: &Snapshot) -> String {
         g!("ont_rx_power_dbm", "Receive optical power", v);
     }
     if let Some(v) = s.tx_uw {
-        g!("ont_tx_power_microwatts", "Transmit optical power (linear)", v);
+        g!(
+            "ont_tx_power_microwatts",
+            "Transmit optical power (linear)",
+            v
+        );
     }
     if let Some(v) = s.rx_uw {
-        g!("ont_rx_power_microwatts", "Receive optical power (linear)", v);
+        g!(
+            "ont_rx_power_microwatts",
+            "Receive optical power (linear)",
+            v
+        );
     }
     if let Some(v) = s.ds_state {
-        gi!("ont_gpon_ds_state", "GTC downstream state (3 = O5 operational)", v);
+        gi!(
+            "ont_gpon_ds_state",
+            "GTC downstream state (3 = O5 operational)",
+            v
+        );
     }
     if let Some(v) = s.o5 {
-        gi!("ont_gpon_o5", "1 if the ONT is in O5 (operational), else 0", v);
+        gi!(
+            "ont_gpon_o5",
+            "1 if the ONT is in O5 (operational), else 0",
+            v
+        );
     }
     if let Some(v) = s.onu_id {
-        gi!("ont_onu_id", "ONU-ID assigned by the OLT (255 = unassigned)", v);
+        gi!(
+            "ont_onu_id",
+            "ONU-ID assigned by the OLT (255 = unassigned)",
+            v
+        );
     }
     if let Some(v) = s.onu_resp {
-        gi!("ont_onu_response_time", "ONU response time (equalization)", v);
+        gi!(
+            "ont_onu_response_time",
+            "ONU response time (equalization)",
+            v
+        );
     }
     if let Some(v) = s.gtc_ds_delay {
         gi!("ont_gtc_ds_delay", "GTC downstream delay", v);
     }
     if let Some(v) = s.ranged_delay {
-        gi!("ont_ranged_delay", "Ranged (equalization) delay set by the OLT", v);
+        gi!(
+            "ont_ranged_delay",
+            "Ranged (equalization) delay set by the OLT",
+            v
+        );
     }
 
     if !s.fec.is_empty() {
@@ -557,10 +602,18 @@ fn render(s: &Snapshot) -> String {
     }
 
     if let Some(v) = s.scrape_dur {
-        g!("ont_scrape_duration_seconds", "Duration of the last successful SSH poll", v);
+        g!(
+            "ont_scrape_duration_seconds",
+            "Duration of the last successful SSH poll",
+            v
+        );
     }
     if let Some(v) = s.ts {
-        gi!("ont_last_scrape_timestamp_seconds", "Unix time of the last successful poll", v);
+        gi!(
+            "ont_last_scrape_timestamp_seconds",
+            "Unix time of the last successful poll",
+            v
+        );
     }
 
     o
@@ -639,7 +692,10 @@ fn serve(cfg: Config, password: Option<String>) -> i32 {
         });
     }
 
-    eprintln!("serving ONT metrics on http://{}/metrics (poll {}s)", bind, interval);
+    eprintln!(
+        "serving ONT metrics on http://{}/metrics (poll {}s)",
+        bind, interval
+    );
     for stream in listener.incoming() {
         match stream {
             Ok(s) => {
