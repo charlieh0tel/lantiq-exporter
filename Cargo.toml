@@ -1,6 +1,6 @@
 [package]
 name = "lantiq-exporter"
-version = "0.1.5"
+version = "0.1.6"
 # A binary for one box, not a library anyone would depend on.
 publish = false
 edition = "2021"
