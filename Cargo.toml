@@ -1,6 +1,8 @@
 [package]
 name = "lantiq-exporter"
 version = "0.1.5"
+# A binary for one box, not a library anyone would depend on.
+publish = false
 edition = "2021"
 description = "Prometheus exporter for a Lantiq/Falcon GPON ONT-on-a-stick"
 license = "MIT"
