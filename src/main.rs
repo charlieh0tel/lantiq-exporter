@@ -679,7 +679,9 @@ fn serve(cfg: Config, password: Option<String>) -> i32 {
     // background poller (owns cfg + password)
     {
         let cache = Arc::clone(&cache);
+        let period = Duration::from_secs(interval);
         std::thread::spawn(move || loop {
+            let started = Instant::now();
             let (snap, err) = poll_once(&cfg, &password);
             if let Some(e) = err {
                 eprintln!("[poll] error: {}", e);
@@ -688,7 +690,12 @@ fn serve(cfg: Config, password: Option<String>) -> i32 {
             if let Ok(mut c) = cache.lock() {
                 *c = text;
             }
-            std::thread::sleep(Duration::from_secs(interval));
+            // Sleep only the remainder of the period: a poll that burns the
+            // full ssh ConnectTimeout must not stretch the cadence. An overrun
+            // polls again immediately rather than queueing up lost ticks.
+            if let Some(rest) = period.checked_sub(started.elapsed()) {
+                std::thread::sleep(rest);
+            }
         });
     }
 
